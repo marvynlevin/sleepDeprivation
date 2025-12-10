@@ -4,6 +4,60 @@ import os
 from google import genai
 import json
 import dotenv
+import joblib
+import pandas as pd
+import numpy as np
+
+
+@st.cache_resource
+def load_brain():
+    try:
+        return joblib.load('sleep_model_artifacts.pkl')
+    except FileNotFoundError:
+        return None
+
+artifacts = load_brain()
+
+# Fonction de prédiction nettoyée (sans debug)
+def predict_sleep_disorder(user_data):
+    if artifacts is None:
+        return "Modèle introuvable (fichier .pkl manquant)"
+
+    try:
+        # 1. Gestion de la tension (ex: "120/80" -> 120, 80)
+        bp = user_data.get('Blood Pressure', '120/80')
+        if '/' in bp:
+            systolic, diastolic = map(int, bp.split('/'))
+        else:
+            systolic, diastolic = 120, 80
+
+        # 2. Création du DataFrame (L'ordre et les noms doivent être exacts)
+        df_input = pd.DataFrame({
+            'Age': [int(user_data.get('Age', 30))],
+            'Gender': [user_data.get('Gender', 'Male')],
+            'Occupation': [user_data.get('Occupation', 'Engineer')],
+            'Sleep Duration': [float(user_data.get('Sleep Duration', 7.0))],
+            'Quality of Sleep': [int(user_data.get('Quality of Sleep', 7))],
+            'Physical Activity Level': [int(user_data.get('Physical Activity Level', 40))],
+            'Stress Level': [int(user_data.get('Stress Level', 5))],
+            'BMI Category': [user_data.get('BMI Category', 'Normal')],
+            'Heart Rate': [int(user_data.get('Heart Rate', 70))],
+            'Daily Steps': [int(user_data.get('Daily Steps', 5000))],
+            'Systolic': [systolic],
+            'Diastolic': [diastolic]
+        })
+
+        # 3. Prédiction
+        pipeline = artifacts['model']
+        le = artifacts['label_encoder']
+
+        pred_code = pipeline.predict(df_input)
+        pred_label = le.inverse_transform(pred_code)[0]
+
+        return pred_label
+
+    except Exception as e:
+        return f"Erreur technique : {str(e)}"
 
 dotenv.load_dotenv()
 
@@ -173,25 +227,22 @@ def call_gemini_chat(user_message: str) -> dict:
         }
 
 
-def call_gemini_analysis(user_data: dict) -> str:
+# Mettez à jour cette fonction pour accepter l'argument 'ai_prediction'
+def call_gemini_analysis(user_data, ai_prediction=None):
     try:
+        # On intègre la prédiction du modèle dans le prompt
+        prediction_text = f"Le modèle prédictif (XGBoost) a diagnostiqué : {ai_prediction}" if ai_prediction else "Le modèle prédictif n'a pas été exécuté."
+
         data_text = f"""
-Données de l'utilisateur :
-- Genre : {user_data.get('Gender', 'Non spécifié')}
-- Âge : {user_data.get('Age', 'Non spécifié')}
-- Profession : {user_data.get('Occupation', 'Non spécifié')}
-- Durée de sommeil : {user_data.get('Sleep Duration', 'Non spécifié')} heures
-- Qualité du sommeil : {user_data.get('Quality of Sleep', 'Non spécifié')}/10
-- Activité physique : {user_data.get('Physical Activity Level', 'Non spécifié')}
-- Niveau de stress : {user_data.get('Stress Level', 'Non spécifié')}/10
-- Catégorie IMC : {user_data.get('BMI Category', 'Non spécifié')}
-- Pression artérielle : {user_data.get('Blood Pressure', 'Non spécifié')}
-- Fréquence cardiaque : {user_data.get('Heart Rate', 'Non spécifié')} bpm
-- Pas quotidiens : {user_data.get('Daily Steps', 'Non spécifié')}
+Données du patient : {user_data}
 
-Analyse ces données et fournis des recommandations personnalisées sur la qualité du sommeil.
+{prediction_text}
+
+Consigne :
+1. Prends en compte le diagnostic du modèle IA ci-dessus.
+2. Explique ce résultat en te basant sur les données (Stress, IMC, Tension...).
+3. Donne 3 recommandations concrètes.
 """
-
         response = client.models.generate_content(
             model=MODEL_TO_USE,
             contents=[{"role": "user", "parts": [{"text": data_text}]}],
@@ -200,123 +251,160 @@ Analyse ces données et fournis des recommandations personnalisées sur la quali
                 "system_instruction": analysis_prompt
             }
         )
-
         return response.text
 
     except Exception as e:
-        st.error(f"Erreur lors de l'analyse: {str(e)}")
-        return "Une erreur s'est produite lors de l'analyse de vos données."
+        return f"Erreur lors de l'analyse : {str(e)}"
 
 
 tab1, tab2, tab3 = st.tabs(["Test", "Conversation", "Charts"])
 
+# TAB 1 : FORMULAIRE
 with tab1:
-    st.header("Sleep Data Entry Form")
-
+    st.header("Formulaire de Diagnostic")
     with st.form(key='sleep_form'):
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            gender = st.selectbox("Gender", ['Male', 'Female'])
-        with col2:
-            age = st.number_input("Age", min_value=20, max_value=60, value=40)
-        with col3:
-            occupation = st.selectbox("Occupation",
-                                      ['Doctor', 'Teacher', 'Software Engineer', 'Lawyer', 'Engineer', 'Accountant',
-                                       'Nurse', 'Scientist', 'Manager', 'Salesperson', 'Sales Representative'])
+        c1, c2, c3 = st.columns(3)
+        gender = c1.selectbox("Gender", ['Male', 'Female'])
+        age = c2.number_input("Age", 20, 90, 40)
+        occupation = c3.selectbox("Occupation", ['Software Engineer', 'Doctor', 'Sales Representative', 'Teacher', 'Nurse', 'Engineer', 'Accountant', 'Scientist', 'Lawyer', 'Salesperson', 'Manager'])
 
-        col1, col2 = st.columns(2)
-        with col1:
-            sleep_duration = st.number_input("Sleep Duration (hours)", min_value=0.0, max_value=24.0, value=7.0)
-        with col2:
-            sleep_quality = st.slider("Sleep Quality (1 to 10)", min_value=1, max_value=10, value=7)
+        c1, c2 = st.columns(2)
+        sleep_duration = c1.number_input("Sleep Duration (h)", 0.0, 24.0, 7.0)
+        sleep_quality = c2.slider("Sleep Quality (1-10)", 1, 10, 7)
 
-        col1, col2 = st.columns(2)
-        with col1:
-            physical_activity = st.slider("Physical Activity Level (1 to 5)", min_value=1, max_value=5, value=3)
-        with col2:
-            stress_level = st.slider("Stress Level (1 to 5)", min_value=1, max_value=5, value=2)
+        c1, c2 = st.columns(2)
+        physical_activity = c1.slider("Physical Activity (min/jour)", 0, 120, 40)
+        stress_level = c2.slider("Stress Level (1-10)", 1, 10, 5)
 
-        col1, col2 = st.columns(2)
-        with col1:
-            bmi_category = st.selectbox("BMI Category", ['Normal Weight', 'Normal', 'Overweight', 'Obese'])
-        with col2:
-            blood_pressure = st.text_input("Blood Pressure (e.g., 120/80)")
+        c1, c2 = st.columns(2)
+        bmi_category = c1.selectbox("BMI Category", ['Normal', 'Overweight', 'Obese'])
+        blood_pressure = c2.text_input("Blood Pressure", "120/80")
 
-        col1, col2 = st.columns(2)
-        with col1:
-            heart_rate = st.number_input("Heart Rate (bpm)", min_value=30, max_value=200, value=70)
-        with col2:
-            daily_steps = st.number_input("Daily Steps", min_value=0, max_value=100000, value=5000)
+        c1, c2 = st.columns(2)
+        heart_rate = c1.number_input("Heart Rate (bpm)", 30, 200, 70)
+        daily_steps = c2.number_input("Daily Steps", 0, 30000, 5000)
 
-        submit_button = st.form_submit_button(label="Run Analysis")
+        submit_button = st.form_submit_button("Lancer l'Analyse")
 
     if submit_button:
+        # Création du dictionnaire
         user_data = {
-            "Gender": gender,
-            "Age": age,
-            "Occupation": occupation,
-            "Sleep Duration": sleep_duration,
-            "Quality of Sleep": sleep_quality,
-            "Physical Activity Level": physical_activity,
-            "Stress Level": stress_level,
-            "BMI Category": bmi_category,
-            "Blood Pressure": blood_pressure,
-            "Heart Rate": heart_rate,
-            "Daily Steps": daily_steps,
+            "Gender": gender, "Age": age, "Occupation": occupation,
+            "Sleep Duration": sleep_duration, "Quality of Sleep": sleep_quality,
+            "Physical Activity Level": physical_activity, "Stress Level": stress_level,
+            "BMI Category": bmi_category, "Blood Pressure": blood_pressure,
+            "Heart Rate": heart_rate, "Daily Steps": daily_steps
         }
 
-        st.success("Data received!")
+        with st.spinner("Analyse IA en cours..."):
+            # 1. Prédiction Technique
+            pred_ia = predict_sleep_disorder(user_data)
 
-        with st.spinner("Analyse en cours..."):
-            analysis_result = call_gemini_analysis(user_data)
+            # 2. Analyse Gemini
+            report = call_gemini_analysis(user_data, pred_ia)
 
-        st.subheader("Analyse de votre sommeil")
-        st.write(analysis_result)
+        st.divider()
+        c_res, c_txt = st.columns([1, 2])
+
+        with c_res:
+            st.subheader("Diagnostic IA")
+
+            # On vérifie "None" OU "Healthy" (selon ce que votre modèle a appris)
+            if pred_ia == "None" or pred_ia == "Healthy":
+                st.success("✅ **SAIN** (Healthy)")
+            elif pred_ia == "Insomnia":
+                st.warning("⚠️ **INSOMNIE**")
+            elif pred_ia == "Sleep Apnea":
+                st.error("🚨 **APNÉE**")
+            else:
+                st.info(f"Résultat : {pred_ia}")
+
+        with c_txt:
+            st.markdown(report)
 
 with tab2:
-    st.header("Conversation")
+    st.header("Conversation avec l'Assistant")
+    st.caption("L'IA va vous poser des questions pour établir votre profil, puis utilisera le modèle de Machine Learning pour le diagnostic.")
 
     chat_container = st.container(height=450, border=True)
 
+    # 1. Affichage de l'historique
     with chat_container:
         for message in st.session_state["messages"]:
             with st.chat_message(message["role"]):
                 st.markdown(message["content"])
 
-    user_input = st.chat_input(placeholder="Comment peut-on vous aider ?", key="user_message")
+    # 2. Zone de saisie utilisateur
+    user_input = st.chat_input(placeholder="Ex: Bonjour, j'ai 30 ans et je dors mal...", key="user_message_chat")
 
     if user_input:
+        # Affiche le message de l'utilisateur
         st.session_state["messages"].append({"role": "user", "content": user_input})
-
         with chat_container:
             with st.chat_message("user"):
                 st.markdown(user_input)
 
-        with st.spinner("Réflexion en cours..."):
+        # 3. Appel à Gemini pour extraire les données (Conversation)
+        with st.spinner("L'assistant réfléchit..."):
             response_data = call_gemini_chat(user_input)
 
-        assistant_message = response_data.get("user_interaction", {}).get("message_to_user",
-                                                                          "Désolé, je n'ai pas compris.")
+        # Récupération de la réponse JSON
+        assistant_message = response_data.get("user_interaction", {}).get("message_to_user", "Je n'ai pas compris.")
+        new_extracted_data = response_data.get("data_extraction", {})
 
+        # Mise à jour des données extraites (On fusionne avec ce qu'on avait déjà)
+        if st.session_state["extracted_data"] is None:
+            st.session_state["extracted_data"] = {}
+
+        # On ne met à jour que les champs non nuls
+        for key, value in new_extracted_data.items():
+            if value is not None:
+                st.session_state["extracted_data"][key] = value
+
+        # Sauvegarde du message assistant dans l'historique
         st.session_state["messages"].append({"role": "assistant", "content": assistant_message})
 
+        with chat_container:
+            with st.chat_message("assistant"):
+                st.markdown(assistant_message)
+
+        # 4. VÉRIFICATION : Est-ce qu'on a tout pour lancer le modèle .pkl ?
         if response_data.get("metadata", {}).get("ready_for_analysis", False):
-            st.success("✅ Données complètes ! Lancement de l'analyse...")
 
-            extracted_data = response_data.get("data_extraction", {})
+            st.success("✅ Toutes les données sont collectées ! Lancement du diagnostic IA...")
 
-            with st.spinner("Génération du rapport de sommeil..."):
-                analysis_report = call_gemini_analysis(extracted_data)
+            # --- C'EST ICI QU'ON UTILISE VOTRE MODÈLE PKL ---
+            final_data = st.session_state["extracted_data"]
+
+            with st.status("Consultation du modèle neuronal...", expanded=True) as status:
+                st.write("Formatage des données...")
+                time.sleep(0.5)
+
+                # Appel de la fonction qui utilise le .pkl
+                prediction_ia = predict_sleep_disorder(final_data)
+
+                st.write(f"Diagnostic du modèle : **{prediction_ia}**")
+                status.update(label="Diagnostic terminé", state="complete", expanded=False)
+
+            # --- APPEL FINAL A GEMINI POUR LE RAPPORT ---
+            with st.spinner("Rédaction du rapport médical détaillé..."):
+                analysis_report = call_gemini_analysis(final_data, prediction_ia)
+
+            # Affichage du rapport final dans le chat
+            final_response_text = f"### 🩺 Résultat du Diagnostic\n\n**Le modèle IA a identifié : {prediction_ia}**\n\n{analysis_report}"
 
             st.session_state["messages"].append({
                 "role": "assistant",
-                "content": f"### 🌙 Analyse de votre sommeil\n\n{analysis_report}"
+                "content": final_response_text
             })
 
-            with st.expander("Voir les données techniques"):
-                st.json(extracted_data)
+            with chat_container:
+                with st.chat_message("assistant"):
+                    st.markdown(final_response_text)
 
-        st.rerun()
+            # (Optionnel) Afficher les données techniques brutes
+            with st.expander("Voir les données utilisées par le modèle"):
+                st.json(final_data)
 
 with tab3:
     st.header("Charts")
