@@ -5,6 +5,8 @@
 Ce projet explore l'intersection entre la santé et l'IA pour identifier, analyser et prédire les signes de privation de
 sommeil à travers des modèles prédictifs et des interfaces génératives.
 
+Diaporama explicatif du projet disponible au [lien suivant](https://www.canva.com/design/DAG73HNqHV8/E9u_j1tClwmgY9PCfZU1Mg/view?utm_content=DAG73HNqHV8&utm_campaign=designshare&utm_medium=link2&utm_source=uniquelinks&utlId=h8b3fcba2ea).
+
 ---
 
 ## 📋 Présentation du Projet
