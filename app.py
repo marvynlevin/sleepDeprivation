@@ -535,7 +535,7 @@ if not st.session_state["app_loaded"]:
         </style>
         """, unsafe_allow_html=True)
 
-    time.sleep(2)
+    time.sleep(1)
     st.session_state["app_loaded"] = True
     st.rerun()
 
