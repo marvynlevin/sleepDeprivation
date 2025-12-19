@@ -11,7 +11,6 @@ import pandas as pd
 @st.cache_resource
 def load_brain():
     try:
-        # Assurez-vous que ce fichier existe
         return joblib.load('sleep_model_artifacts.pkl')
     except FileNotFoundError:
         return None
@@ -61,14 +60,12 @@ def predict_sleep_disorder(user_data):
 
 dotenv.load_dotenv()
 
-# Vérification de l'API Key pour éviter l'erreur si elle n'est pas configurée
 if "GEMINI_API_KEY" in os.environ:
     client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
 else:
     st.error("La clé API GEMINI_API_KEY n'est pas configurée dans les variables d'environnement.")
     client = None
 
-# --- CONFIGURATION STREAMLIT AVEC THÈME BLEU ET BLANC ---
 st.set_page_config(
     layout="wide",
     page_title="Sleepy - Analyse du Sommeil",
@@ -76,7 +73,6 @@ st.set_page_config(
 )
 # --------------------------------------------------------
 
-# CSS Personnalisé (MAINTENANT SEULEMENT POUR L'ESTHÉTIQUE)
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Caveat:wght@400;600;700&family=Nunito:wght@300;400;600;800;900&display=swap');
@@ -93,7 +89,7 @@ st.markdown("""
     footer {
         visibility: hidden;
     }
-    
+
     /* Polices */
     * {
         font-family: 'Nunito', sans-serif;
@@ -285,13 +281,29 @@ st.markdown("""
 
 MODEL_TO_USE = "gemini-flash-latest"
 
-# ... (Le reste du code de l'assistant IA et des fonctions est inchangé) ...
 analysis_prompt = """
-Agis comme un assistant virtuel expert en hygiène de sommeil. En t'appuyant sur les données du fichier 'Sleep_Data_Sampled.csv', analyse les liens entre le style de vie (niveau de stress, IMC, activité physique) et le type de trouble du sommeil identifié dans la colonne 'Sleep Disorder'.
+Commence IMPÉRATIVEMENT ta réponse par la phrase exacte suivante : 'Bonjour ! Je suis l'assistant Sleepy, et voici le rapport détaillé de votre analyse.'
 
-Si un utilisateur présente un trouble spécifique comme l'insomnie ou l'apnée du sommeil, fournis des recommandations factuelles et pratiques basées sur les tendances observées dans les données ou sur des principes de santé générale reconnus. Concentre-toi sur des ajustements simples du quotidien.
+Agis comme un assistant virtuel expert en hygiène de sommeil. Ta mission est de générer un rapport concis, structuré en exactement trois paragraphes, sans aucune liste à puces, en t'appuyant sur les données patient et le diagnostic prédictif fourni.
 
-Adopte un ton professionnel, concis et serviable, typique d'un bot d'aide en ligne. Évite le jargon médical complexe. Ne fais aucune liste à puces ; structure ta réponse uniquement sous forme de paragraphes fluides et cohérents.
+**RÈGLE DE TON ET VOCABULAIRE :** Utilise un langage simple, accessible et non-médical. Si tu dois utiliser un mot technique ou complexe (ex: "apnée", "hygiène", "comorbidité"), **tu dois impérativement l'expliquer immédiatement entre parenthèses ( )**.
+
+STRICTE STRUCTURE DE RÉPONSE (3 PARAGRAPHES OBLIGATOIRES) :
+
+1. PARAGRAPHE D'ANALYSE (Diagnostic et Liens Factuels) :
+    - Confirme clairement le diagnostic ('Healthy', 'Insomnia', 'Sleep Apnea').
+    - Analyse et explique ce résultat en te basant **uniquement** sur les données du patient (Stress Level, Sleep Duration, BMI Category, etc.). Cite explicitement les données clés qui justifient la conclusion. (Ex: "Le diagnostic d'Insomnia est cohérent avec votre niveau de stress élevé (X/10) et votre courte durée de sommeil (Y heures).")
+
+2. PARAGRAPHE DE CONTEXTUALISATION ET D'IMPACT (Signification et Risques) :
+    - Décris brièvement ce que signifie le diagnostic pour la santé quotidienne de l'utilisateur.
+    - Pour 'Insomnia' ou 'Sleep Apnea', indique clairement les risques potentiels associés ou la nécessité de consultation médicale (surtout pour l'Apnée du Sommeil).
+
+3. PARAGRAPHE DE RECOMMANDATIONS (Trois Actions Clés) :
+    - Fournis **exactement trois** recommandations concrètes et spécifiques, adaptées au profil du patient et à son diagnostic. Chaque recommandation doit être courte et directement actionable. (Ex: "Augmenter l'activité physique à [X minutes] par jour.")
+
+Adopte un ton professionnel, concis et serviable. Le rapport final doit contenir l'ouverture, les trois paragraphes, et se terminer IMPÉRATIVEMENT par la phrase exacte suivante : 'En espérant que cela puisse vous aider et à vous revoir d'ici peu pour retester !'
+
+NE JAMAIS inclure la liste des champs ou des exemples dans la réponse finale. Le corps de la réponse ne doit être que du texte formaté selon ces règles.
 """
 
 chat_prompt = """
@@ -465,8 +477,8 @@ Données du patient : {user_data}
 {prediction_text}
 
 Consigne :
-1. Prends en compte le diagnostic du modèle IA ci-dessus.
-2. Explique ce résultat en te basant sur les données (Stress, IMC, Tension...).
+1. Respecte STRICTEMENT la structure de 3 paragraphes définie dans la System Instruction.
+2. Explique le résultat en te basant sur les données (Stress, IMC, Tension...).
 3. Donne 3 recommandations concrètes.
 """
         response = client.models.generate_content(
@@ -538,11 +550,9 @@ if not st.session_state["mode_selected"]:
     </div>
     """, unsafe_allow_html=True)
 
-    # --- NOUVELLE STRUCTURE POUR LES CARDS CLIQUABLES ---
     col1, col2 = st.columns(2, gap="large")
 
     with col1:
-        # Le contenu de la card est dans la balise HTML
         st.markdown("""
         <div class="choice-card-container">
             <div class="choice-card">
@@ -579,11 +589,8 @@ if not st.session_state["mode_selected"]:
             st.session_state["selected_mode"] = "formulaire"
             st.rerun()
 
-    # --- FIN NOUVELLE STRUCTURE ---
-
     st.stop()
 
-# Header avec logo SVG et bouton retour
 col_logo, col_back = st.columns([5, 1])
 
 with col_logo:
