@@ -303,6 +303,8 @@ STRICTE STRUCTURE DE RÉPONSE (3 PARAGRAPHES OBLIGATOIRES) :
 
 Adopte un ton professionnel, concis et serviable. Le rapport final doit contenir l'ouverture, les trois paragraphes, et se terminer IMPÉRATIVEMENT par la phrase exacte suivante : 'En espérant que cela puisse vous aider et à vous revoir d'ici peu pour retester !'
 
+Les paragraphes seront de petite taille.
+
 NE JAMAIS inclure la liste des champs ou des exemples dans la réponse finale. Le corps de la réponse ne doit être que du texte formaté selon ces règles.
 """
 
